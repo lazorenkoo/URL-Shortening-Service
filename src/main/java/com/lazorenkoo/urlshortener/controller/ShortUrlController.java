@@ -7,6 +7,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -29,6 +31,11 @@ public class ShortUrlController {
 	public ResponseEntity<UrlResponse> create(@RequestBody UrlRequest request) {
 		UrlResponse response = UrlResponse.from(service.create(request.url()));
 		return ResponseEntity.status(HttpStatus.CREATED).body(response);
+	}
+
+	@GetMapping("/{shortCode}")
+	public UrlResponse get(@PathVariable String shortCode) {
+		return UrlResponse.from(service.get(shortCode));
 	}
 
 	@ExceptionHandler(ResponseStatusException.class)

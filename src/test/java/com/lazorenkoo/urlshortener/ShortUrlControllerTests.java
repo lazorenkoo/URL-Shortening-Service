@@ -3,6 +3,9 @@ package com.lazorenkoo.urlshortener;
 import com.jayway.jsonpath.JsonPath;
 import com.lazorenkoo.urlshortener.model.ShortUrl;
 import com.lazorenkoo.urlshortener.repository.ShortUrlRepository;
+import com.lazorenkoo.urlshortener.service.ShortUrlService;
+import jakarta.persistence.EntityManager;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -11,10 +14,19 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
+
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -28,6 +40,65 @@ class ShortUrlControllerTests {
 
 	@Autowired
 	private ShortUrlRepository repository;
+
+	@Autowired
+	private EntityManager entityManager;
+
+	@Autowired
+	private ShortUrlService service;
+
+	@Test
+	void getsUrlAndCountsEachAccess() throws Exception {
+		String code = UUID.randomUUID().toString();
+		ShortUrl saved = repository.saveAndFlush(new ShortUrl("https://example.com/path", code));
+		entityManager.refresh(saved);
+		Instant createdAt = saved.getCreatedAt();
+		Instant updatedAt = saved.getUpdatedAt();
+
+		for (int count = 1; count <= 2; count++) {
+			mvc.perform(get("/shorten/{shortCode}", code))
+					.andExpect(status().isOk())
+					.andExpect(jsonPath("$.id").value(saved.getId().toString()))
+					.andExpect(jsonPath("$.url").value(saved.getUrl()))
+					.andExpect(jsonPath("$.shortCode").value(code))
+					.andExpect(jsonPath("$.createdAt").value(createdAt.toString()))
+					.andExpect(jsonPath("$.updatedAt").value(updatedAt.toString()))
+					.andExpect(jsonPath("$.accessCount").doesNotExist());
+			entityManager.clear();
+			assertEquals(count, repository.findByShortCode(code).orElseThrow().getAccessCount());
+		}
+	}
+
+	@Test
+	void returns404ForUnknownCode() throws Exception {
+		long count = repository.count();
+		mvc.perform(get("/shorten/{shortCode}", UUID.randomUUID().toString()))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.error").value("Short URL not found"));
+		assertEquals(count, repository.count());
+	}
+
+	@Test
+	@Transactional(propagation = Propagation.NOT_SUPPORTED)
+	void countsConcurrentAccesses() throws Exception {
+		String code = UUID.randomUUID().toString();
+		ShortUrl saved = repository.saveAndFlush(new ShortUrl("https://example.com/concurrent", code));
+		var executor = Executors.newFixedThreadPool(8);
+		try {
+			var requests = new ArrayList<Callable<ShortUrl>>();
+			for (int i = 0; i < 20; i++) {
+				requests.add(() -> service.get(code));
+			}
+			for (var result : executor.invokeAll(requests, 15, TimeUnit.SECONDS)) {
+				assertEquals(saved.getId(), result.get().getId());
+			}
+			assertEquals(20, repository.findByShortCode(code).orElseThrow().getAccessCount());
+		} finally {
+			executor.shutdownNow();
+			executor.awaitTermination(10, TimeUnit.SECONDS);
+			repository.deleteById(saved.getId());
+		}
+	}
 
 	@ParameterizedTest
 	@ValueSource(strings = {"https://example.com/path?q=java#part", "http://example.com/path"})
