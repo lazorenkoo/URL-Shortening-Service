@@ -2,6 +2,7 @@ package com.lazorenkoo.urlshortener.controller;
 
 import com.lazorenkoo.urlshortener.dto.UrlRequest;
 import com.lazorenkoo.urlshortener.dto.UrlResponse;
+import com.lazorenkoo.urlshortener.dto.UrlStatsResponse;
 import com.lazorenkoo.urlshortener.service.ShortUrlService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -38,6 +39,11 @@ public class ShortUrlController {
 	@GetMapping("/{shortCode}")
 	public UrlResponse get(@PathVariable String shortCode) {
 		return UrlResponse.from(service.get(shortCode));
+	}
+
+	@GetMapping("/{shortCode}/stats")
+	public UrlStatsResponse stats(@PathVariable String shortCode) {
+		return UrlStatsResponse.from(service.stats(shortCode));
 	}
 
 	@PutMapping("/{shortCode}")

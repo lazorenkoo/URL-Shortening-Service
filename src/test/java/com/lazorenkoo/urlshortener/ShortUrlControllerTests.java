@@ -82,6 +82,41 @@ class ShortUrlControllerTests {
 	}
 
 	@Test
+	void getsStatsWithoutCountingStatsRequests() throws Exception {
+		String code = UUID.randomUUID().toString();
+		ShortUrl saved = repository.saveAndFlush(new ShortUrl("https://example.com", code));
+		entityManager.refresh(saved);
+		Instant createdAt = saved.getCreatedAt();
+		Instant updatedAt = saved.getUpdatedAt();
+
+		mvc.perform(get("/shorten/{shortCode}/stats", code))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.accessCount").value(0));
+		mvc.perform(get("/shorten/{shortCode}", code)).andExpect(status().isOk());
+		mvc.perform(get("/shorten/{shortCode}", code)).andExpect(status().isOk());
+
+		for (int i = 0; i < 2; i++) {
+			mvc.perform(get("/shorten/{shortCode}/stats", code))
+					.andExpect(status().isOk())
+					.andExpect(jsonPath("$.id").value(saved.getId().toString()))
+					.andExpect(jsonPath("$.url").value(saved.getUrl()))
+					.andExpect(jsonPath("$.shortCode").value(code))
+					.andExpect(jsonPath("$.createdAt").value(createdAt.toString()))
+					.andExpect(jsonPath("$.updatedAt").value(updatedAt.toString()))
+					.andExpect(jsonPath("$.accessCount").value(2));
+		}
+		entityManager.clear();
+		assertEquals(2, repository.findByShortCode(code).orElseThrow().getAccessCount());
+	}
+
+	@Test
+	void returns404ForUnknownStatsCode() throws Exception {
+		mvc.perform(get("/shorten/{shortCode}/stats", UUID.randomUUID().toString()))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.error").value("Short URL not found"));
+	}
+
+	@Test
 	void deletesUrl() throws Exception {
 		String code = UUID.randomUUID().toString();
 		repository.saveAndFlush(new ShortUrl("https://example.com", code));

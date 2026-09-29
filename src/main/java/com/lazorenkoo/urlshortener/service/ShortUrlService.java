@@ -50,6 +50,12 @@ public class ShortUrlService {
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Short URL not found"));
 	}
 
+	@Transactional(readOnly = true)
+	public ShortUrl stats(String shortCode) {
+		return repository.findByShortCode(shortCode)
+				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Short URL not found"));
+	}
+
 	@Transactional
 	public ShortUrl update(String shortCode, String url) {
 		validateUrl(url);
