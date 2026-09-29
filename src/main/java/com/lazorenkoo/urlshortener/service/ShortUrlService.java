@@ -59,6 +59,13 @@ public class ShortUrlService {
 		return repository.saveAndFlush(shortUrl);
 	}
 
+	@Transactional
+	public void delete(String shortCode) {
+		ShortUrl shortUrl = repository.findByShortCode(shortCode)
+				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Short URL not found"));
+		repository.delete(shortUrl);
+	}
+
 	private void validateUrl(String url) {
 		if (url == null || url.isBlank()) {
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "URL is required");

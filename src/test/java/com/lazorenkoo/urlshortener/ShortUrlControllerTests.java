@@ -28,6 +28,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -74,6 +76,33 @@ class ShortUrlControllerTests {
 	void returns404ForUnknownCode() throws Exception {
 		long count = repository.count();
 		mvc.perform(get("/shorten/{shortCode}", UUID.randomUUID().toString()))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.error").value("Short URL not found"));
+		assertEquals(count, repository.count());
+	}
+
+	@Test
+	void deletesUrl() throws Exception {
+		String code = UUID.randomUUID().toString();
+		repository.saveAndFlush(new ShortUrl("https://example.com", code));
+
+		mvc.perform(delete("/shorten/{shortCode}", code))
+				.andExpect(status().isNoContent())
+				.andExpect(content().string(""));
+
+		entityManager.flush();
+		entityManager.clear();
+		assertTrue(repository.findByShortCode(code).isEmpty());
+		mvc.perform(get("/shorten/{shortCode}", code))
+				.andExpect(status().isNotFound());
+		mvc.perform(delete("/shorten/{shortCode}", code))
+				.andExpect(status().isNotFound());
+	}
+
+	@Test
+	void returns404WhenDeletingUnknownCode() throws Exception {
+		long count = repository.count();
+		mvc.perform(delete("/shorten/{shortCode}", UUID.randomUUID().toString()))
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.error").value("Short URL not found"));
 		assertEquals(count, repository.count());
