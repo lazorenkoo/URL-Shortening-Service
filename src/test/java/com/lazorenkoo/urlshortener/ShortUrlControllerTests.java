@@ -27,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -76,6 +77,61 @@ class ShortUrlControllerTests {
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.error").value("Short URL not found"));
 		assertEquals(count, repository.count());
+	}
+
+	@Test
+	void updatesUrlWithoutChangingCodeOrAccessCount() throws Exception {
+		String code = UUID.randomUUID().toString();
+		ShortUrl saved = repository.saveAndFlush(new ShortUrl("https://example.com/old", code));
+		entityManager.refresh(saved);
+		Instant createdAt = saved.getCreatedAt();
+		Instant updatedAt = saved.getUpdatedAt();
+		service.get(code);
+
+		mvc.perform(put("/shorten/{shortCode}", code)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"url\":\"https://example.com/new\"}"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.id").value(saved.getId().toString()))
+				.andExpect(jsonPath("$.url").value("https://example.com/new"))
+				.andExpect(jsonPath("$.shortCode").value(code))
+				.andExpect(jsonPath("$.createdAt").value(createdAt.toString()))
+				.andExpect(jsonPath("$.accessCount").doesNotExist());
+
+		entityManager.clear();
+		ShortUrl updated = repository.findByShortCode(code).orElseThrow();
+		assertEquals("https://example.com/new", updated.getUrl());
+		assertEquals(1, updated.getAccessCount());
+		assertTrue(updated.getUpdatedAt().isAfter(updatedAt));
+	}
+
+	@Test
+	void returns404WhenUpdatingUnknownCode() throws Exception {
+		mvc.perform(put("/shorten/{shortCode}", UUID.randomUUID().toString())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"url\":\"https://example.com/new\"}"))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.error").value("Short URL not found"));
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {"{}", "{\"url\":null}", "{\"url\":\"\"}",
+			"{\"url\":\"example.com\"}", "{\"url\":\"ftp://example.com\"}", "{", "", "null", "[]"})
+	void rejectsInvalidUpdate(String body) throws Exception {
+		String code = UUID.randomUUID().toString();
+		ShortUrl saved = repository.saveAndFlush(new ShortUrl("https://example.com/old", code));
+		entityManager.refresh(saved);
+		Instant updatedAt = saved.getUpdatedAt();
+
+		mvc.perform(put("/shorten/{shortCode}", code)
+				.contentType(MediaType.APPLICATION_JSON).content(body))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.error").isNotEmpty());
+
+		entityManager.clear();
+		ShortUrl unchanged = repository.findByShortCode(code).orElseThrow();
+		assertEquals("https://example.com/old", unchanged.getUrl());
+		assertEquals(updatedAt, unchanged.getUpdatedAt());
 	}
 
 	@Test
