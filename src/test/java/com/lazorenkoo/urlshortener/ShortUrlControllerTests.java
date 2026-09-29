@@ -30,6 +30,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -49,6 +50,26 @@ class ShortUrlControllerTests {
 
 	@Autowired
 	private ShortUrlService service;
+
+	@Test
+	void redirectsAndCountsEachVisit() throws Exception {
+		String code = UUID.randomUUID().toString();
+		repository.saveAndFlush(new ShortUrl("https://example.com/old", code));
+		for (int count = 1; count <= 2; count++) {
+			mvc.perform(get("/s/{shortCode}", code))
+					.andExpect(status().isFound())
+					.andExpect(header().string("Location", "https://example.com/old"))
+					.andExpect(header().string("Cache-Control", "no-store"));
+			assertEquals(count, repository.findByShortCode(code).orElseThrow().getAccessCount());
+		}
+		service.update(code, "https://example.com/new");
+		mvc.perform(get("/s/{shortCode}", code))
+				.andExpect(status().isFound())
+				.andExpect(header().string("Location", "https://example.com/new"));
+		assertEquals(3, repository.findByShortCode(code).orElseThrow().getAccessCount());
+		service.delete(code);
+		mvc.perform(get("/s/{shortCode}", code)).andExpect(status().isNotFound());
+	}
 
 	@Test
 	void getsUrlAndCountsEachAccess() throws Exception {
